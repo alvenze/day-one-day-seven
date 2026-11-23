@@ -1,0 +1,129 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Pocket Grove — a tiny game, day one to day seven</title>
+<style>
+  body { margin:0; background:#101418; color:#eef; font-family:system-ui, sans-serif; display:flex; flex-direction:column; align-items:center; gap:10px; padding:14px; }
+  canvas { width:min(92vw, 405px); image-rendering:pixelated; border-radius:10px; box-shadow:0 8px 40px #000a; cursor:pointer; }
+  .row { display:flex; gap:8px; align-items:center; flex-wrap:wrap; justify-content:center; }
+  button { background:#ffb62e; border:0; border-radius:8px; padding:9px 14px; font-weight:700; cursor:pointer; }
+  button.ghost { background:#26313a; color:#dfe; }
+  p { max-width:46ch; text-align:center; color:#bcd; font-size:14px; line-height:1.45; margin:0; }
+  b { color:#fff; }
+</style>
+</head>
+<body>
+<canvas id="cv" width="540" height="960"></canvas>
+<div class="row">
+  <button id="sleep">Sleep — next day</button>
+  <button id="reset" class="ghost">Restart</button>
+</div>
+<p><b>How to play:</b> click a soil cell to plant a seed, click it again to water.
+Sleep to pass a day: watered plants grow, and the grove itself wakes up over the week
+(trees leaf out, the pond fills, flowers and butterflies arrive). On day seven,
+click a ripe plant to harvest it for +25. Built by an AI agent in one session for a
+make.fun bounty: the video entry shows this exact grove on day one and day seven.</p>
+<script>
+const cv = document.getElementById('cv'), ctx = cv.getContext('2d');
+const CELLS = [];
+for (let r = 0; r < 3; r++) for (let c = 0; c < 3; c++) CELLS.push({ x: 116 + c * 92, y: 500 + r * 110, i: r * 3 + c });
+let day, cells, score, gardenerY, targetY, frame;
+function reset() {
+  day = 1; score = 0; frame = 0; gardenerY = 430; targetY = 430;
+  cells = CELLS.map(c => ({ ...c, stage: 0, watered: false }));
+  // day one starts the way the video does: one sprout, already planted
+  cells[5].stage = 2;
+}
+reset();
+
+const C = (r, g, b) => `rgb(${r},${g},${b})`;
+function rect(x, y, w, h, col) { ctx.fillStyle = col; ctx.fillRect(x, y, w, h); }
+function circ(x, y, r, col) { ctx.fillStyle = col; ctx.beginPath(); ctx.arc(x, y, r, 0, 7); ctx.fill(); }
+function ell(x, y, rx, ry, col) { ctx.fillStyle = col; ctx.beginPath(); ctx.ellipse(x, y, rx, ry, 0, 0, 7); ctx.fill(); }
+function txt(s, x, y, size, col, align = 'left') { ctx.fillStyle = col; ctx.font = `bold ${size}px monospace`; ctx.textAlign = align; ctx.fillText(s, x, y); }
+
+function plant(cell) {
+  const { x, y, i, stage } = cell, lush = day >= 4;
+  ell(x, y + 16, 30, 9, C(104, 74, 46));
+  if (stage === 0) return;
+  if (stage === 1) { circ(x, y + 8, 5, C(120, 96, 60)); return; }        // seed
+  if (stage === 2) { rect(x - 2, y - 8, 4, 22, C(74, 140, 66)); ell(x - 8, y - 10, 9, 5, C(86, 160, 74)); ell(x + 8, y - 13, 9, 5, C(96, 172, 80)); return; }
+  if (stage === 3) { rect(x - 2, y - 22, 4, 38, C(64, 140, 60)); ell(x - 12, y - 14, 12, 6, C(74, 150, 66)); ell(x + 12, y - 24, 12, 6, C(74, 150, 66)); circ(x, y - 26, 12, C(70, 155, 70)); return; }
+  // stage 4: mature, type by index (same as the video)
+  const kind = i % 3;
+  if (kind === 0) { circ(x, y + 2, 26, C(56, 148, 62)); circ(x - 18, y + 10, 18, C(64, 158, 68)); circ(x + 18, y + 10, 18, C(60, 152, 66));
+    [[-12, -6], [8, 2], [-2, 12], [16, -10], [-18, 8]].forEach(([dx, dy]) => circ(x + dx, y + dy, 6, C(232, 64, 54))); }
+  else if (kind === 1) { rect(x - 2, y - 34, 4, 52, C(64, 140, 60)); ell(x - 10, y - 6, 10, 5, C(74, 150, 66)); ell(x + 10, y - 16, 10, 5, C(74, 150, 66));
+    for (let k = 0; k < 8; k++) { const a = k / 8 * Math.PI * 2; circ(x + Math.cos(a) * 11, y - 40 + Math.sin(a) * 11, 5, C(255, 200, 40)); } circ(x, y - 40, 9, C(120, 84, 44)); }
+  else { ell(x, y + 10, 30, 12, C(70, 150, 70)); ell(x - 8, y + 12, 17, 12, C(240, 132, 32)); ell(x + 14, y + 14, 12, 9, C(244, 148, 48)); rect(x - 10, y - 2, 4, 6, C(90, 120, 60)); }
+  if (cell.watered && stage < 4) txt('~', x, y - 34, 18, C(170, 215, 255), 'center');
+}
+
+function draw() {
+  frame++;
+  const lush = day >= 4, mid = day >= 2;
+  // sky
+  if (!lush) rect(0, 0, 540, 960, C(168, 188, 200)); else { for (let y = 0; y < 340; y++) rect(0, y, 540, 1, C(86 + y / 4, 164 + y / 6, 232 + y / 28)); }
+  circ(440, 92, lush ? 34 : 26, lush ? C(255, 214, 90) : C(226, 230, 205));
+  rect(0, 300, 540, 70, lush ? C(70, 150, 78) : C(140, 160, 130));
+  ell(120, 330, 220, 42, lush ? C(92, 176, 92) : C(140, 160, 130)); ell(430, 336, 200, 38, lush ? C(92, 176, 92) : C(140, 160, 130));
+  rect(0, 360, 540, 600, lush ? C(84, 168, 84) : C(128, 152, 104));
+  // trees: trunks always, canopy from day 3
+  for (const [tx, ty, s] of [[452, 396, 1], [92, 408, 0.72]]) {
+    rect(tx - 6 * s, ty, 12 * s, 74 * s, C(96, 68, 44));
+    if (day >= 3) { circ(tx, ty - 44 * s, 40 * s, C(52, 142, 60)); circ(tx - 30 * s, ty - 26 * s, 28 * s, C(62, 156, 68)); circ(tx + 30 * s, ty - 28 * s, 29 * s, C(58, 150, 64));
+      [[-14, -50], [16, -34], [2, -66]].forEach(([dx, dy]) => circ(tx + dx * s, ty + dy * s, 5 * s, C(232, 64, 54))); }
+  }
+  // plot
+  rect(48, 428, 320, 384, lush ? C(122, 86, 58) : C(150, 116, 84));
+  rect(48, 428, 320, 6, C(104, 74, 46)); rect(48, 806, 320, 6, C(104, 74, 46));
+  cells.forEach(plant);
+  if (day < 3) { ell(330, 770, 17, 13, C(146, 110, 66)); rect(322, 752, 16, 8, C(130, 96, 56)); } // seed bag, early days
+  if (day >= 5) { const cols = [C(232, 64, 54), C(246, 150, 190), C(255, 200, 40), C(150, 110, 220)];
+    for (let i = 0; i < 12; i++) { const fx = 62 + i * 26; rect(fx, 824, 3, 12, C(64, 140, 60)); circ(fx + 1, 822, 5, cols[i % 4]); } }
+  // path + pond
+  for (let y = 424; y <= 864; y += 44) ell(410, y, 21, 13, C(168, 168, 172));
+  if (day >= 4) { ell(452, 806, 66, 40, C(70, 150, 210)); ell(452, 800, 56, 32, C(96, 176, 228)); circ(478, 792, 7, C(90, 170, 80)); circ(478, 788, 4, C(246, 150, 190)); }
+  else ell(452, 806, 58, 34, C(140, 142, 130));
+  if (day >= 6) for (let i = 0; i < 2; i++) { const bx = 270 + Math.sin(frame * 0.021 + i * 2.4) * 120, by = 470 + Math.cos(frame * 0.017 + i * 1.7) * 90;
+    ell(bx - 4, by, 4, 5, C(246, 150, 190)); ell(bx + 4, by, 4, 5, C(246, 150, 190)); rect(bx - 1, by - 3, 2, 7, C(24, 24, 32)); }
+  // gardener (walks toward targetY on the path)
+  gardenerY += Math.sign(targetY - gardenerY) * Math.min(2.2, Math.abs(targetY - gardenerY));
+  const gx = 410, gy = gardenerY, walking = Math.abs(targetY - gardenerY) > 2;
+  const bob = walking ? Math.abs(Math.sin(frame * 0.35)) * 3 : Math.sin(frame * 0.06) * 1.2, y = gy - bob;
+  rect(gx - 9, y + 26, 7, 14, C(90, 80, 70)); rect(gx + 3, y + 26, 7, 14, C(90, 80, 70));
+  rect(gx - 11, y + 40, 11, 5, C(60, 48, 40)); rect(gx + 2, y + 40, 11, 5, C(60, 48, 40));
+  rect(gx - 12, y, 24, 28, C(38, 128, 140));
+  circ(gx, y - 12, 11, C(240, 196, 150)); rect(gx - 16, y - 19, 32, 5, C(232, 196, 92)); rect(gx - 9, y - 26, 18, 8, C(232, 196, 92));
+  // HUD
+  rect(14, 14, 150, 26, C(20, 22, 30)); rect(14, 14, 150, 2, C(255, 196, 40)); txt(`DAY ${day} - V${day === 1 ? '0.1' : '1.' + (day - 1)}`, 21, 32, 15, '#fff');
+  rect(386, 14, 140, 26, C(20, 22, 30)); rect(386, 14, 140, 2, C(255, 196, 40)); txt('SCORE ' + score, 519, 32, 15, '#fff', 'right');
+  if (day === 7) txt('DAY SEVEN - HARVEST TIME', 270, 900, 17, '#fff', 'center');
+  requestAnimationFrame(draw);
+}
+draw();
+
+cv.addEventListener('click', (e) => {
+  const r = cv.getBoundingClientRect(), sx = 540 / r.width, sy = 960 / r.height;
+  const mx = (e.clientX - r.left) * sx, my = (e.clientY - r.top) * sy;
+  for (const cell of cells) {
+    if (Math.abs(mx - cell.x) < 44 && Math.abs(my - cell.y) < 52) {
+      targetY = cell.y - 44;
+      if (cell.stage === 0) { cell.stage = 1; }
+      else if (cell.stage === 4) { cell.stage = 3; score += 25; }
+      else cell.watered = true;
+      return;
+    }
+  }
+});
+document.getElementById('sleep').addEventListener('click', () => {
+  if (day >= 7) return;
+  day++;
+  for (const cell of cells) { if (cell.watered && cell.stage > 0 && cell.stage < 4) cell.stage++; cell.watered = false; }
+});
+document.getElementById('reset').addEventListener('click', reset);
+</script>
+</body>
+</html>
